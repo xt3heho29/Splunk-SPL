@@ -1,0 +1,152 @@
+Unknown Process Using The Kerberos Protocol
+
+| tstats summariesonly=false allow_old_summaries=true count FROM datamodel=Endpoint.Processes where Processes.process_name!=lsass.exe by _time Processes.process_id Processes.process_name Processes.dest Processes.process_path Processes.process Processes.parent_process_name 
+| `drop_dm_object_name(Processes)` 
+| `security_content_ctime(firstTime)` 
+| `security_content_ctime(lastTime)` 
+| join  process_id [
+| tstats summariesonly=false allow_old_summaries=true count FROM datamodel=Network_Traffic.All_Traffic where All_Traffic.dest_port = 88 by All_Traffic.process_id All_Traffic.dest All_Traffic.dest_port 
+| `drop_dm_object_name(All_Traffic)` ] 
+| table _time dest parent_process_name process_name process_path process process_id dest_port 
+
+Kerberos TGT Request Using RC4 Encryption
+`wineventlog_security` EventCode=4768 Ticket_Encryption_Type=0x17 Account_Name!=*$ 
+
+Interactive Session on Remote Endpoint with PowerShell
+`powershell` EventCode=4104 (ScriptBlockText="*Enter-PSSession*" AND ScriptBlockText="*-ComputerName*") 
+| stats count min(_time) as firstTime max(_time) as lastTime by EventCode ScriptBlockText Computer user_id 
+| `security_content_ctime(firstTime)` 
+| `security_content_ctime(lastTime)` 
+
+Rubeus Kerberos Ticket Exports Through Winlogon Access
+ `sysmon` EventCode=10 TargetImage=C:\\Windows\\system32\\winlogon.exe (GrantedAccess=0x1f3fff) (SourceImage!=C:\\Windows\\system32\\svchost.exe AND SourceImage!=C:\\Windows\\system32\\lsass.exe AND SourceImage!=C:\\Windows\\system32\\LogonUI.exe AND SourceImage!=C:\\Windows\\system32\\smss.exe AND SourceImage!=C:\\Windows\\system32\\wbem\\wmiprvse.exe) 
+| stats count min(_time) as firstTime max(_time) as lastTime by Computer, SourceImage, SourceProcessId, TargetImage, TargetProcessId, EventCode, GrantedAccess 
+| rename Computer as dest 
+| `security_content_ctime(firstTime)`
+| `security_content_ctime(lastTime)` 
+
+Rubeus Command Line Parameters
+| tstats summariesonly=false allow_old_summaries=true count min(_time) as firstTime max(_time) as lastTime from datamodel=Endpoint.Processes where (Processes.process = "*ptt /ticket*" OR Processes.process = "* monitor *" OR Processes.process ="* asktgt* /user:*" OR Processes.process ="* asktgs* /service:*" OR Processes.process ="* golden* /user:*" OR Processes.process ="* silver* /service:*" OR Processes.process ="* kerberoast*" OR Processes.process ="* asreproast*" OR Processes.process = "* renew* /ticket:*" OR Processes.process = "* brute* /password:*" OR Processes.process = "* brute* /passwords:*" OR Processes.process ="* harvest*") by Processes.dest Processes.user Processes.parent_process Processes.process_name Processes.process Processes.process_id Processes.parent_process_id Processes.parent_process_name 
+| `drop_dm_object_name(Processes)` 
+| `security_content_ctime(firstTime)` 
+| `security_content_ctime(lastTime)` 
+
+Mimikatz PassTheTicket CommandLine Parameters
+| tstats summariesonly=false allow_old_summaries=true count min(_time) as firstTime max(_time) as lastTime from datamodel=Endpoint.Processes where (Processes.process = "*sekurlsa::tickets /export*" OR Processes.process = "*kerberos::ptt*") by Processes.dest Processes.user Processes.parent_process Processes.process_name Processes.process Processes.process_id Processes.parent_process_id Processes.parent_process_name 
+| `drop_dm_object_name(Processes)` 
+| `security_content_ctime(firstTime)` 
+| `security_content_ctime(lastTime)` 
+
+Enable RDP In Other Port Number
+| tstats summariesonly=false allow_old_summaries=true count min(_time) as firstTime max(_time) as lastTime FROM datamodel=Endpoint.Registry where Registry.registry_path="*HKLM\\SYSTEM\\CurrentControlSet\\Control\\Terminal Server\\WinStations\\RDP-Tcp*" Registry.registry_value_name = "PortNumber" by _time span=1h Registry.dest Registry.user Registry.registry_path Registry.registry_value_name Registry.process_guid Registry.registry_key_name 
+| `drop_dm_object_name(Registry)` 
+|rename process_guid as proc_guid 
+|join proc_guid, _time [
+| tstats summariesonly=false allow_old_summaries=true count FROM datamodel=Endpoint.Processes by _time span=1h Processes.process_id Processes.process_name Processes.process Processes.dest Processes.parent_process_name Processes.parent_process Processes.process_guid 
+| `drop_dm_object_name(Processes)` 
+|rename process_guid as proc_guid 
+| fields _time dest user parent_process_name parent_process process_name process_path process proc_guid registry_path registry_value_name registry_value_data registry_key_name] 
+| table _time dest user parent_process_name parent_process process_name process_path process proc_guid registry_path registry_value_name registry_value_data registry_key_name 
+
+
+Allow Inbound Traffic By Firewall Rule Registry
+| tstats summariesonly=false allow_old_summaries=true count from datamodel=Endpoint.Registry where Registry.registry_path= "*\\System\\CurrentControlSet\\Services\\SharedAccess\\Parameters\\FirewallPolicy\\FirewallRules\\*" Registry.registry_value_data = "*
+|Action=Allow
+|*" Registry.registry_value_data = "*
+|Dir=In
+|*" Registry.registry_value_data = "*
+|Profile=Public
+|*" Registry.registry_value_data = "*
+|LPort=*" by _time span=1h Registry.dest Registry.user Registry.registry_path Registry.registry_value_name Registry.process_guid Registry.registry_key_name Registry.registry_value_data 
+| `drop_dm_object_name(Registry)` 
+|rename process_guid as proc_guid 
+|join proc_guid, _time [
+| tstats summariesonly=false allow_old_summaries=true count FROM datamodel=Endpoint.Processes by _time span=1h Processes.process_id Processes.process_name Processes.process Processes.dest Processes.parent_process_name Processes.parent_process Processes.process_guid 
+| `drop_dm_object_name(Processes)` 
+|rename process_guid as proc_guid 
+| fields _time dest user parent_process_name parent_process process_name process_path process proc_guid registry_path registry_value_name registry_value_data registry_key_name] 
+| table _time dest user parent_process_name parent_process process_name process_path process proc_guid registry_path registry_value_name registry_value_data registry_key_name 
+
+Impacket Lateral Movement Commandline Parameters
+| tstats summariesonly=false allow_old_summaries=true count min(_time) as firstTime max(_time) as lastTime from datamodel=Endpoint.Processes where (Processes.process = "*/c* \\\\127.0.0.1\\*" OR Processes.process= "*/c* 2>&1") by Processes.dest Processes.user Processes.parent_process_name Processes.process_name Processes.process Processes.process_id Processes.parent_process_id 
+| `drop_dm_object_name(Processes)` 
+| `security_content_ctime(firstTime)`
+| `security_content_ctime(lastTime)` 
+
+Potential Pass the Token or Hash Observed at the Destination Device
+| from read_ssa_enriched_events() 
+| where "Authentication" IN(_datamodels) 
+| eval timestamp=parse_long(ucast(map_get(input_event, "_time"), "string", null)), dest_user=lower(ucast(map_get(input_event, "dest_user_primary_artifact"), "string", null)), dest_user_id=   ucast(map_get(input_event, "dest_user_id"), "string", null), dest_device_id=       ucast(map_get(input_event, "dest_device_id"), "string", null), signature_id=   lower(ucast(map_get(input_event, "signature_id"), "string", null)), authentication_method=  lower(ucast(map_get(input_event, "authentication_method"), "string", null)), event_id=ucast(map_get(input_event, "event_id"), "string", null)
+| where signature_id = "4624" AND (authentication_method="ntlmssp" OR authentication_method="kerberos") AND dest_user_id != null AND dest_device_id != null
+| eval isKerberos=if(authentication_method == "kerberos", 1, 0), isNtlm=if(authentication_method == "ntlmssp", 1, 0), timeNTLM=if(isNtlm > 0, timestamp, null)
+| stats sum(isKerberos) as totalKerberos, sum(isNtlm)     as totalNtlm, min(timestamp)  as startTime, min(timeNTLM)   as startNTLMTime, max(timestamp)  as endTime, max(timeNTLM)   as endNTLMTime by dest_user_id, dest_user, dest_device_id, span(timestamp, 86400s)
+| where NOT dest_user="-" AND totalKerberos > 0 AND totalNtlm > 0 AND endTime - startTime > 1800000 AND (totalKerberos > 10 * totalNtlm AND totalKerberos > 50)  AND (endTime - startTime) > 3 * (endNTLMTime - startNTLMTime)
+| eval start_time=ucast(startNTLMTime, "long", null), end_time=ucast(endNTLMTime, "long", null), entities=mvappend(dest_user_id, dest_device_id), body=create_map(["event_id", event_id, "total_kerberos", totalKerberos, "total_ntlm", totalNtlm, "analysis_start_time", startTime, "analysis_end_time", endTime, "pth_start_time", startNTLMTime, "pth_end_time", endNTLMTime])
+| into write_ssa_detected_events();
+
+Possible Lateral Movement PowerShell Spawn
+| tstats summariesonly=false allow_old_summaries=true count min(_time) as firstTime max(_time) as lastTime from datamodel=Endpoint.Processes where (Processes.parent_process_name=wmiprvse.exe OR Processes.parent_process_name=services.exe OR Processes.parent_process_name=svchost.exe OR Processes.parent_process_name=wsmprovhost.exe OR Processes.parent_process_name=mmc.exe) (Processes.process_name=powershell.exe OR (Processes.process_name=cmd.exe AND Processes.process=*powershell.exe*) OR Processes.process_name=pwsh.exe OR (Processes.process_name=cmd.exe AND Processes.process=*pwsh.exe*)) by Processes.dest Processes.user Processes.parent_process Processes.process_name Processes.process Processes.process_id Processes.parent_process_id 
+| `drop_dm_object_name(Processes)` 
+| `security_content_ctime(firstTime)` 
+| `security_content_ctime(lastTime)` 
+
+Mmc LOLBAS Execution Process Spawn
+| tstats summariesonly=false allow_old_summaries=true count min(_time) as firstTime max(_time) as lastTime from datamodel=Endpoint.Processes where (Processes.parent_process_name=mmc.exe) (Processes.process_name IN ("Regsvcs.exe", "Ftp.exe", "OfflineScannerShell.exe", "Rasautou.exe", "Schtasks.exe", "Xwizard.exe", "Dllhost.exe", "Pnputil.exe", "Atbroker.exe", "Pcwrun.exe", "Ttdinject.exe","Mshta.exe", "Bitsadmin.exe", "Certoc.exe", "Ieexec.exe", "Microsoft.Workflow.Compiler.exe", "Runscripthelper.exe", "Forfiles.exe", "Msbuild.exe", "Register-cimprovider.exe", "Tttracer.exe", "Ie4uinit.exe", "Bash.exe", "Hh.exe", "SettingSyncHost.exe", "Cmstp.exe", "Mmc.exe", "Stordiag.exe", "Scriptrunner.exe", "Odbcconf.exe", "Extexport.exe", "Msdt.exe", "WorkFolders.exe", "Diskshadow.exe", "Mavinject.exe", "Regasm.exe", "Gpscript.exe", "Rundll32.exe", "Regsvr32.exe", "Msiexec.exe", "Wuauclt.exe", "Presentationhost.exe", "Wmic.exe", "Runonce.exe", "Syncappvpublishingserver.exe", "Verclsid.exe", "Infdefaultinstall.exe", "Explorer.exe", "Installutil.exe", "Netsh.exe", "Wab.exe", "Dnscmd.exe", "At.exe", "Pcalua.exe", "Msconfig.exe")) by Processes.dest Processes.user Processes.parent_process Processes.process_name Processes.process Processes.process_id Processes.parent_process_id 
+| `drop_dm_object_name(Processes)` 
+| `security_content_ctime(firstTime)` 
+| `security_content_ctime(lastTime)` 
+
+Wsmprovhost LOLBAS Execution Process Spawn
+| tstats summariesonly=false allow_old_summaries=true count min(_time) as firstTime max(_time) as lastTime from datamodel=Endpoint.Processes where (Processes.parent_process_name=wsmprovhost.exe) (Processes.process_name IN ("Regsvcs.exe", "Ftp.exe", "OfflineScannerShell.exe", "Rasautou.exe", "Schtasks.exe", "Xwizard.exe", "Dllhost.exe", "Pnputil.exe", "Atbroker.exe", "Pcwrun.exe", "Ttdinject.exe","Mshta.exe", "Bitsadmin.exe", "Certoc.exe", "Ieexec.exe", "Microsoft.Workflow.Compiler.exe", "Runscripthelper.exe", "Forfiles.exe", "Msbuild.exe", "Register-cimprovider.exe", "Tttracer.exe", "Ie4uinit.exe", "Bash.exe", "Hh.exe", "SettingSyncHost.exe", "Cmstp.exe", "Mmc.exe", "Stordiag.exe", "Scriptrunner.exe", "Odbcconf.exe", "Extexport.exe", "Msdt.exe", "WorkFolders.exe", "Diskshadow.exe", "Mavinject.exe", "Regasm.exe", "Gpscript.exe", "Rundll32.exe", "Regsvr32.exe", "Msiexec.exe", "Wuauclt.exe", "Presentationhost.exe", "Wmic.exe", "Runonce.exe", "Syncappvpublishingserver.exe", "Verclsid.exe", "Infdefaultinstall.exe", "Explorer.exe", "Installutil.exe", "Netsh.exe", "Wab.exe", "Dnscmd.exe", "At.exe", "Pcalua.exe", "Msconfig.exe")) by Processes.dest Processes.user Processes.parent_process Processes.process_name Processes.process Processes.process_id Processes.parent_process_id 
+| `drop_dm_object_name(Processes)` 
+| `security_content_ctime(firstTime)` 
+| `security_content_ctime(lastTime)`
+
+
+Executable File Written in Administrative SMB Share
+`wineventlog_security` EventCode=5145 Relative_Target_Name IN ("*.exe","*.dll") Object_Type=File Share_Name IN ("\\\\*\\C$","\\\\*\\IPC$","\\\\*\\admin$") Access_Mask= "0x2" 
+| stats min(_time) as firstTime max(_time) as lastTime count by EventCode Share_Name Relative_Target_Name Object_Type Access_Mask user src_port Source_Address 
+| `security_content_ctime(firstTime)` 
+| `security_content_ctime(lastTime)` 
+
+Remote Process Instantiation via WinRM and PowerShell Script Block
+`powershell` EventCode=4104 (ScriptBlockText="*Invoke-Command*" AND ScriptBlockText="*-ComputerName*") 
+| stats count min(_time) as firstTime max(_time) as lastTime by EventCode ScriptBlockText Computer user_id 
+| `security_content_ctime(firstTime)` 
+| `security_content_ctime(lastTime)` 
+
+Remote Process Instantiation via WinRM and Winrs
+| tstats summariesonly=false allow_old_summaries=true count min(_time) as firstTime max(_time) as lastTime from datamodel=Endpoint.Processes where (Processes.process_name=winrs.exe OR Processes.original_file_name=winrs.exe) (Processes.process="*-r:*" OR Processes.process="*-remote:*") by Processes.dest Processes.user Processes.parent_process_name Processes.process_name Processes.process Processes.process_id Processes.parent_process_id 
+| `drop_dm_object_name(Processes)` 
+| `security_content_ctime(firstTime)`
+| `security_content_ctime(lastTime)` 
+
+Potential Pass the Token or Hash Observed by an Event Collecting Device
+ from read_ssa_enriched_events() 
+| where "Authentication" IN(_datamodels)
+| eval timestamp=parse_long(ucast(map_get(input_event, "_time"), "string", null)), dest_user=      lower(ucast(map_get(input_event, "dest_user_primary_artifact"), "string", null)), dest_user_id=   ucast(map_get(input_event, "dest_user_id"), "string", null), origin_device_id=       ucast(map_get(input_event, "origin_device_id"), "string", null), signature_id=   lower(ucast(map_get(input_event, "signature_id"), "string", null)), authentication_method=  lower(ucast(map_get(input_event, "authentication_method"), "string", null)), event_id=ucast(map_get(input_event, "event_id"), "string", null) 
+| where signature_id = "4624" AND (authentication_method="ntlmssp" OR authentication_method="kerberos") AND dest_user_id != null AND origin_device_id != null
+| eval isKerberos=if(authentication_method == "kerberos", 1, 0), isNtlm=if(authentication_method == "ntlmssp", 1, 0), timeNTLM=if(isNtlm > 0, timestamp, null)
+| stats sum(isKerberos) as totalKerberos, sum(isNtlm)     as totalNtlm, min(timestamp)  as startTime, min(timeNTLM)   as startNTLMTime, max(timestamp)  as endTime, max(timeNTLM)   as endNTLMTime by dest_user_id, dest_user, origin_device_id, span(timestamp, 86400s)
+| where NOT dest_user="-" AND totalKerberos > 0 AND totalNtlm > 0 AND endTime - startTime > 1800000 AND (totalKerberos > 10 * totalNtlm AND totalKerberos > 50)  AND (endTime - startTime) > 3 * (endNTLMTime - startNTLMTime)
+| eval start_time=startNTLMTime, end_time=endNTLMTime, entities=mvappend(dest_user_id, origin_device_id), body=create_map(["event_id", event_id, "total_kerberos", totalKerberos, "total_ntlm", totalNtlm, "analysis_start_time", startTime, "analysis_end_time", endTime, "detection_start_time", startNTLMTime, "detection_end_time", endNTLMTime])
+| into write_ssa_detected_events();
+
+Detect PsExec With accepteula Flag
+| tstats summariesonly=false allow_old_summaries=true values(Processes.process) as process min(_time) as firstTime max(_time) as lastTime from datamodel=Endpoint.Processes where `process_psexec` Processes.process=*accepteula* by Processes.dest Processes.user Processes.parent_process_name Processes.process_name Processes.process Processes.process_id Processes.parent_process_id 
+| `drop_dm_object_name(Processes)`
+| `security_content_ctime(firstTime)`
+| `security_content_ctime(lastTime)` 
+
+Allow Inbound Traffic In Firewall Rule
+`powershell` EventCode=4104 Message = "*firewall*" Message = "*Inbound*" Message = "*Allow*"  Message = "*-LocalPort*" 
+| stats count min(_time) as firstTime max(_time) as lastTime by EventCode Message ComputerName User 
+| `security_content_ctime(firstTime)` 
+| `security_content_ctime(lastTime)` 
+
+Detect Activity Related to Pass the Hash Attacks
+`wineventlog_security` EventCode=4624 (Logon_Type=3 Logon_Process=NtLmSsp WorkstationName=WORKSTATION NOT AccountName="ANONYMOUS LOGON") OR (Logon_Type=9 Logon_Process=seclogo) 
+| fillnull 
+| stats count min(_time) as firstTime max(_time) as lastTime by EventCode, Logon_Type, WorkstationName, user, dest 
+| `security_content_ctime(firstTime)`
+| `security_content_ctime(lastTime)` 
