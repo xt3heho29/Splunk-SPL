@@ -1,0 +1,224 @@
+SQL Injection with Long URLs
+
+| tstats `security_content_summariesonly` count from datamodel=Web where Web.dest_category=web_server AND (Web.url_length > 1024 OR Web.http_user_agent_length > 200) by Web.src Web.dest Web.url Web.url_length Web.http_user_agent 
+| `drop_dm_object_name("Web")` 
+| eval url=lower(url) 
+| eval num_sql_cmds=mvcount(split(url, "alter%20table")) + mvcount(split(url, "between")) + mvcount(split(url, "create%20table")) + mvcount(split(url, "create%20database")) + mvcount(split(url, "create%20index")) + mvcount(split(url, "create%20view")) + mvcount(split(url, "delete")) + mvcount(split(url, "drop%20database")) + mvcount(split(url, "drop%20index")) + mvcount(split(url, "drop%20table")) + mvcount(split(url, "exists")) + mvcount(split(url, "exec")) + mvcount(split(url, "group%20by")) + mvcount(split(url, "having")) + mvcount(split(url, "insert%20into")) + mvcount(split(url, "inner%20join")) + mvcount(split(url, "left%20join")) + mvcount(split(url, "right%20join")) + mvcount(split(url, "full%20join")) + mvcount(split(url, "select")) + mvcount(split(url, "distinct")) + mvcount(split(url, "select%20top")) + mvcount(split(url, "union")) + mvcount(split(url, "xp_cmdshell")) - 24 
+| where num_sql_cmds > 3 
+
+
+Hunting for Log4Shell
+
+| from datamodel Web.Web 
+| eval jndi=if(match(_raw, "(\{
+|%7B)[jJnNdDiI]{4}:"),4,0) 
+| eval jndi_fastmatch=if(match(_raw, "[jJnNdDiI]{4}"),2,0) 
+| eval jndi_proto=if(match(_raw,"(?i)jndi:(ldap[s]?
+|rmi
+|dns
+|nis
+|iiop
+|corba
+|nds
+|http
+|https):"),5,0) 
+| eval all_match = if(match(_raw, "(?i)(%(25){0,}20
+|\s)*(%(25){0,}24
+|\$)(%(25){0,}20
+|\s)*(%(25){0,}7B
+|{)(%(25){0,}20
+|\s)*(%(25){0,}(6A
+|4A)
+|J)(%(25){0,}(6E
+|4E)
+|N)(%(25){0,}(64
+|44)
+|D)(%(25){0,}(69
+|49)
+|I)(%(25){0,}20
+|\s)*(%(25){0,}3A
+|:)[\w\%]+(%(25){1,}3A
+|:)(%(25){1,}2F
+|\/)[^\n]+"),5,0) 
+| eval env_var = if(match(_raw, "env:") OR match(_raw, "env:AWS_ACCESS_KEY_ID") OR match(_raw, "env:AWS_SECRET_ACCESS_KEY"),5,0) 
+| eval uridetect = if(match(_raw, "(?i)Basic\/Command\/Base64
+|Basic\/ReverseShell
+|Basic\/TomcatMemshell
+|Basic\/JBossMemshell
+|Basic\/WebsphereMemshell
+|Basic\/SpringMemshell
+|Basic\/Command
+|Deserialization\/CommonsCollectionsK
+|Deserialization\/CommonsBeanutils
+|Deserialization\/Jre8u20\/TomcatMemshell
+|Deserialization\/CVE_2020_2555\/WeblogicMemshell
+|TomcatBypass
+|GroovyBypass
+|WebsphereBypass"),4,0) 
+| eval keywords = if(match(_raw,"(?i)\$\{ctx\:loginId\}
+|\$\{map\:type\}
+|\$\{filename\}
+|\$\{date\:MM-dd-yyyy\}
+|\$\{docker\:containerId\}
+|\$\{docker\:containerName\}
+|\$\{docker\:imageName\}
+|\$\{env\:USER\}
+|\$\{event\:Marker\}
+|\$\{mdc\:UserId\}
+|\$\{java\:runtime\}
+|\$\{java\:vm\}
+|\$\{java\:os\}
+|\$\{jndi\:logging/context-name\}
+|\$\{hostName\}
+|\$\{docker\:containerId\}
+|\$\{k8s\:accountName\}
+|\$\{k8s\:clusterName\}
+|\$\{k8s\:containerId\}
+|\$\{k8s\:containerName\}
+|\$\{k8s\:host\}
+|\$\{k8s\:labels.app\}
+|\$\{k8s\:labels.podTemplateHash\}
+|\$\{k8s\:masterUrl\}
+|\$\{k8s\:namespaceId\}
+|\$\{k8s\:namespaceName\}
+|\$\{k8s\:podId\}
+|\$\{k8s\:podIp\}
+|\$\{k8s\:podName\}
+|\$\{k8s\:imageId\}
+|\$\{k8s\:imageName\}
+|\$\{log4j\:configLocation\}
+|\$\{log4j\:configParentLocation\}
+|\$\{spring\:spring.application.name\}
+|\$\{main\:myString\}
+|\$\{main\:0\}
+|\$\{main\:1\}
+|\$\{main\:2\}
+|\$\{main\:3\}
+|\$\{main\:4\}
+|\$\{main\:bar\}
+|\$\{name\}
+|\$\{marker\}
+|\$\{marker\:name\}
+|\$\{spring\:profiles.active[0]
+|\$\{sys\:logPath\}
+|\$\{web\:rootDir\}
+|\$\{sys\:user.name\}"),4,0) 
+| eval obf = if(match(_raw, "(\$
+|%24)[^ /]*({
+|%7b)[^ /]*(j
+|%6a)[^ /]*(n
+|%6e)[^ /]*(d
+|%64)[^ /]*(i
+|%69)[^ /]*(:
+|%3a)[^ /]*(:
+|%3a)[^ /]*(/
+|%2f)"),5,0) 
+| eval lookups = if(match(_raw, "(?i)({
+|%7b)(main
+|sys
+|k8s
+|spring
+|lower
+|upper
+|env
+|date
+|sd)"),4,0)  
+| addtotals fieldname=Score, jndi, jndi_proto, env_var, uridetect, all_match, jndi_fastmatch, keywords, obf, lookups 
+| where Score > 2 
+| stats values(Score) by  jndi, jndi_proto, env_var, uridetect, all_match, jndi_fastmatch, keywords, lookups, obf, _raw 
+
+
+Log4Shell JNDI Payload Injection with Outbound Connection
+
+| from datamodel Web.Web 
+| rex field=_raw max_match=0 "[jJnNdDiI]{4}(\:
+|\%3A
+|\/
+|\%2F)(?<proto>\w+)(\:\/\/
+|\%3A\%2F\%2F)(\$\{.*?\}(\.)?)?(?<affected_host>[a-zA-Z0-9\.\-\_\$]+)" 
+| join affected_host type=inner [
+| tstats `security_content_summariesonly` count min(_time) as firstTime max(_time) as lastTime from datamodel=Network_Traffic.All_Traffic by All_Traffic.dest 
+| `drop_dm_object_name(All_Traffic)` 
+| `security_content_ctime(firstTime)` 
+| `security_content_ctime(lastTime)` 
+| rename dest AS affected_host] 
+| fillnull 
+| stats count by action, category, dest, dest_port, http_content_type, http_method, http_referrer, http_user_agent, site, src, url, url_domain, user
+
+
+F5 BIG-IP iControl REST Vulnerability CVE-2022-1388
+
+| tstats count from datamodel=Web where Web.url="*/mgmt/tm/util/bash*" Web.http_method="POST" by Web.http_user_agent Web.http_method, Web.url,Web.url_length Web.src, Web.dest 
+| `drop_dm_object_name("Web")` 
+| `security_content_ctime(firstTime)` 
+| `security_content_ctime(lastTime)`
+
+
+Web Spring4Shell HTTP Request Class Module
+
+`stream_http` http_method IN ("POST") 
+| stats values(form_data) as http_request_body min(_time) as firstTime max(_time) as lastTime count by http_method http_user_agent uri_path url bytes_in bytes_out 
+| search http_request_body IN ("*class.module.classLoader.resources.context.parent.pipeline.first.fileDateFormat=_*", "*class.module.classLoader.resources.context.parent.pipeline.first.pattern*","*suffix=.jsp*") 
+| `security_content_ctime(firstTime)` 
+| `security_content_ctime(lastTime)` 
+
+
+Web Spring Cloud Function FunctionRouter
+
+| tstats count from datamodel=Web where Web.http_method IN ("POST") Web.url="*/functionRouter*" by Web.http_user_agent Web.http_method, Web.url,Web.url_length Web.src, Web.dest Web.status sourcetype 
+| `drop_dm_object_name("Web")` 
+| `security_content_ctime(firstTime)` 
+| `security_content_ctime(lastTime)` 
+
+
+Web JSP Request via URL
+
+| tstats count from datamodel=Web where Web.http_method IN ("GET") Web.url IN ("*.jsp?cmd=*","*j&cmd=*") by Web.http_user_agent Web.http_method, Web.url,Web.url_length Web.src, Web.dest sourcetype 
+| `drop_dm_object_name("Web")` 
+| `security_content_ctime(firstTime)` 
+| `security_content_ctime(lastTime)`
+
+
+Spring4Shell Payload URL Request
+
+| tstats count from datamodel=Web where Web.http_method IN ("GET") Web.url IN ("*tomcatwar.jsp*","*poc.jsp*","*shell.jsp*") by Web.http_user_agent Web.http_method, Web.url,Web.url_length Web.src, Web.dest sourcetype 
+| `drop_dm_object_name("Web")` 
+| `security_content_ctime(firstTime)` 
+| `security_content_ctime(lastTime)`
+
+
+Log4Shell JNDI Payload Injection Attempt
+
+| from datamodel Web.Web 
+| regex _raw="[jJnNdDiI]{4}(\:
+|\%3A
+|\/
+|\%2F)\w+(\:\/\/
+|\%3A\%2F\%2F)(\$\{.*?\}(\.)?)?" 
+| fillnull 
+| stats count by action, category, dest, dest_port, http_content_type, http_method, http_referrer, http_user_agent, site, src, url, url_domain, user
+
+
+Java Class File download by Java User Agent
+
+| tstats count from datamodel=Web where Web.http_user_agent="*Java*" Web.http_method="GET" Web.url="*.class*" by Web.http_user_agent Web.http_method, Web.url,Web.url_length Web.src, Web.dest 
+| `drop_dm_object_name("Web")` 
+| `security_content_ctime(firstTime)` 
+| `security_content_ctime(lastTime)`
+
+
+Detect web traffic to dynamic domain providers
+
+| tstats `security_content_summariesonly` count values(Web.url) as url min(_time) as firstTime from datamodel=Web where Web.status=200 by Web.src Web.dest Web.status 
+| `drop_dm_object_name("Web")` 
+| `security_content_ctime(firstTime)` 
+| `dynamic_dns_web_traffic`
+
+
+Monitor Web Traffic For Brand Abuse
+
+| tstats `security_content_summariesonly` values(Web.url) as urls min(_time) as firstTime from datamodel=Web by Web.src 
+| `drop_dm_object_name("Web")` 
+| `security_content_ctime(firstTime)` 
+| `brand_abuse_web` 
+| `monitor_web_traffic_for_brand_abuse_filter`
